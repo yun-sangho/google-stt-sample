@@ -9,6 +9,10 @@ socket.on('messages', function (data) {
 	console.log(data);
 });
 
+socket.on('speechData', (data) => {
+  console.log(data.results[0].alternatives[0].transcript);
+})
+
 const paths = document.getElementsByTagName("path");
 const visualizer = document.getElementById("visualizer");
 const mask = visualizer.getElementById("mask");

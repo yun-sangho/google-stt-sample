@@ -1,14 +1,12 @@
-const express = require('express'); // const bodyParser = require('body-parser'); // const path = require('path');
+const express = require('express');
 
-// Google Cloud
 require('dotenv').config();
 const speech = require('@google-cloud/speech');
-let speechClient;
+const speechClient = new speech.SpeechClient();
 
 const app = express();
 const port = process.env.PORT || 1337;
 const server = require('http').createServer(app);
-
 const io = require('socket.io')(server);
 
 const encoding = 'LINEAR16';
@@ -22,7 +20,7 @@ const request = {
     sampleRateHertz,
     languageCode,
   },
-  interimResults: true, // If you want interim results, set this to true
+  interimResults: true,
 };
 
 io.on('connection', function (client) {
@@ -37,9 +35,9 @@ io.on('connection', function (client) {
     client.emit('broad', data);
   });
 
-  client.on('recordingStart', function (data) {
+  client.on('recordingStart', function () {
     console.log('recording started on client');
-    startRecognitionStream(this, data);
+    startRecognitionStream(this);
   });
 
   client.on('recordingStop', function () {
@@ -54,12 +52,13 @@ io.on('connection', function (client) {
   });
 
   function startRecognitionStream(client) {
-    speechClient = new speech.SpeechClient();
+    console.log(speechClient);
     recognizeStream = speechClient
       .streamingRecognize(request)
-      .on('error', console.error)
+      .on('error', (e) => {
+        console.log('google error', e)
+      })
       .on('data', (data) => {
-        console.log(data)
         process.stdout.write(data.results[0] && data.results[0].alternatives[0] ? `Transcription: ${data.results[0].alternatives[0].transcript}\n` : '\n\nReached transcription time limit, press Ctrl+C\n');
         client.emit('speechData', data);
       });
@@ -69,16 +68,21 @@ io.on('connection', function (client) {
     if (recognizeStream) {
       recognizeStream.end();
     }
-
-    if (speechClient) {
-        speechClient.close()
-    }
-
     recognizeStream = null;
-    speechClient = null;
   }
 });
 
 server.listen(port, '127.0.0.1', function () {
   console.log('Server started on port:' + port);
+});
+
+process.on('beforeExit', () => {
+    console.log('closing client');
+    io.close();
+    speechClient.close();
+})
+
+process.on('exit', () => {
+    io.close();
+    speechClient.close();
 });
