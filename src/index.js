@@ -2,12 +2,18 @@ const paths = document.getElementsByTagName("path");
 const visualizer = document.getElementById("visualizer");
 const mask = visualizer.getElementById("mask");
 const audioInputSelect = document.querySelector('select#audioSource');
+const startButton = document.getElementById("startRecButton");
+const stopButton = document.getElementById("stopRecButton");
 
-const runAnalyser = (stream) => {
-  const audioContext = new AudioContext();
-  const audioStream = audioContext.createMediaStreamSource(stream);
-  const analyser = audioContext.createAnalyser();
-  audioStream.connect(analyser);
+const AUIDO_CONTEXT = new AudioContext();
+let AUDIO_STREAM;
+let AUDIO_MEDIA;
+let AUDIO_PROCESSOR;
+let IS_RECORDING = false;
+
+const runVisualizer = () => {
+  const analyser = AUIDO_CONTEXT.createAnalyser();
+  AUDIO_MEDIA.connect(analyser);
   analyser.fftSize = 1024;
 
   const frequencyArray = new Uint8Array(analyser.frequencyBinCount);
@@ -55,10 +61,20 @@ const handleDevices = (deviceInfos) => {
 }
 
 function handleStream(stream) {
-  window.stream = stream
-  runAnalyser(stream);
+  AUDIO_STREAM = stream
 
-  return navigator.mediaDevices.enumerateDevices();
+  AUDIO_PROCESSOR = AUIDO_CONTEXT.createScriptProcessor(2048, 1, 1);
+  AUDIO_PROCESSOR.connect(AUIDO_CONTEXT.destination);
+  AUIDO_CONTEXT.resume();
+
+  AUDIO_MEDIA = AUIDO_CONTEXT.createMediaStreamSource(AUDIO_STREAM);
+  AUDIO_MEDIA.connect(AUDIO_PROCESSOR);
+
+  AUDIO_PROCESSOR.onaudioprocess = function (e) {
+    console.log();
+  };
+
+  runVisualizer();
 }
 
 const handleError = (e) => {
@@ -66,19 +82,52 @@ const handleError = (e) => {
 }
 
 function start() {
-  if (window.stream) {
-    window.stream.getTracks().forEach(track => {
+  console.log('[Recroding] starts')
+
+  if (AUDIO_STREAM) {
+    AUDIO_STREAM.getTracks().forEach(track => {
       track.stop();
     });
   }
+
+  IS_RECORDING = true;
+  startButton.disabled = true;
+	stopButton.disabled = false;
+  
   const audioSource = audioInputSelect.value;
   const constraints = {
     audio: {deviceId: audioSource ? {exact: audioSource} : 'defualt'},
   };
-  navigator.mediaDevices.getUserMedia(constraints).then(handleStream).then(handleDevices).catch(handleError);
+  navigator.mediaDevices.getUserMedia(constraints).then(handleStream).catch(handleError);
 }
 
-audioInputSelect.onchange = start;
+const stop = () => {
+  console.log('[Recroding] stops')
+
+  if (AUDIO_STREAM) {
+    AUDIO_STREAM.getTracks().forEach(track => {
+      track.stop();
+    });
+  }
+
+  AUDIO_MEDIA.disconnect(AUDIO_PROCESSOR)
+  AUDIO_PROCESSOR.disconnect(AUIDO_CONTEXT)
+
+  IS_RECORDING = false;
+  startButton.disabled = false;
+  stopButton.disabled = true;
+}
+
 navigator.mediaDevices.enumerateDevices().then(handleDevices).catch(handleError);
 
-start();
+startButton.addEventListener('click', start)
+stopButton.addEventListener('click', stop)
+
+audioInputSelect.addEventListener('change', () => {
+  navigator.mediaDevices.enumerateDevices().then(handleDevices).catch(handleError);
+
+  if (IS_RECORDING) {
+    stop()
+    start()
+  }
+});
