@@ -1,3 +1,14 @@
+import io from 'socket.io-client';
+const socket = io.connect('http://localhost:1337');
+
+socket.on('connect', function () {
+	socket.emit('join', 'Server Connected to Client');
+});
+
+socket.on('messages', function (data) {
+	console.log(data);
+});
+
 const paths = document.getElementsByTagName("path");
 const visualizer = document.getElementById("visualizer");
 const mask = visualizer.getElementById("mask");
@@ -60,7 +71,12 @@ const handleDevices = (deviceInfos) => {
   audioInputSelect.value = value;
 }
 
-function handleStream(stream) {
+const handleAudio = (bufferData) => {
+  const buffer = downsampleBuffer(bufferData, 44100, 16000)
+  socket.emit('buffer', buffer);
+}
+
+const handleStream = (stream) => {
   AUDIO_STREAM = stream
 
   AUDIO_PROCESSOR = AUIDO_CONTEXT.createScriptProcessor(2048, 1, 1);
@@ -71,7 +87,8 @@ function handleStream(stream) {
   AUDIO_MEDIA.connect(AUDIO_PROCESSOR);
 
   AUDIO_PROCESSOR.onaudioprocess = function (e) {
-    console.log();
+    const buffer = e.inputBuffer.getChannelData(0);
+    handleAudio(buffer)
   };
 
   runVisualizer();
@@ -83,6 +100,7 @@ const handleError = (e) => {
 
 function start() {
   console.log('[Recroding] starts')
+  socket.emit('recordingStart', '');
 
   if (AUDIO_STREAM) {
     AUDIO_STREAM.getTracks().forEach(track => {
@@ -103,6 +121,7 @@ function start() {
 
 const stop = () => {
   console.log('[Recroding] stops')
+  socket.emit('recordingStop', '');
 
   if (AUDIO_STREAM) {
     AUDIO_STREAM.getTracks().forEach(track => {
@@ -131,3 +150,36 @@ audioInputSelect.addEventListener('change', () => {
     start()
   }
 });
+
+
+function downsampleBuffer(buffer, sampleRate, outSampleRate) {
+	if (outSampleRate === sampleRate) {
+		return buffer;
+  }
+  
+	if (outSampleRate > sampleRate) {
+		throw "downsampling rate show be smaller than original sample rate";
+  }
+  
+	const sampleRateRatio = sampleRate / outSampleRate;
+	const newLength = Math.round(buffer.length / sampleRateRatio);
+  const result = new Int16Array(newLength);
+  
+	let offsetResult = 0;
+  let offsetBuffer = 0;
+  
+	while (offsetResult < result.length) {
+		let nextOffsetBuffer = Math.round((offsetResult + 1) * sampleRateRatio);
+		let accum = 0, count = 0;
+		for (let i = offsetBuffer; i < nextOffsetBuffer && i < buffer.length; i++) {
+			accum += buffer[i];
+			count++;
+		}
+
+		result[offsetResult] = Math.min(1, accum / count) * 0x7FFF;
+		offsetResult++;
+		offsetBuffer = nextOffsetBuffer;
+  }
+  
+	return result.buffer;
+}
